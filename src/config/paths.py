@@ -16,9 +16,10 @@ OUTPUT_DIR = Path(os.environ.get("BOOKREC_OUTPUT_DIR", PROJECT_ROOT / "models"))
 LOG_DIR = Path(os.environ.get("BOOKREC_LOG_DIR", PROJECT_ROOT / "logs"))
 PLOT_DIR = Path(os.environ.get("BOOKREC_PLOT_DIR", PROJECT_ROOT / "plots"))
 SUBMISSION_DIR = Path(os.environ.get("BOOKREC_SUBMISSION_DIR", PROJECT_ROOT / "submissions"))
+REPORTS_DIR = Path(os.environ.get("BOOKREC_REPORTS_DIR", PROJECT_ROOT / "reports"))
 
 # Ensure output directories exist
-for _d in (LOG_DIR, PLOT_DIR, OUTPUT_DIR, SUBMISSION_DIR):
+for _d in (LOG_DIR, PLOT_DIR, OUTPUT_DIR, SUBMISSION_DIR, REPORTS_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
 # Specific data files

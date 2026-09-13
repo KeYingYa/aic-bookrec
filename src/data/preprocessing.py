@@ -14,6 +14,70 @@ from src.config.paths import (
 )
 
 
+def read_interactions_raw(input_csv: Path | str | None = None) -> pd.DataFrame:
+    """Read ``inter_reevaluation.csv`` (GBK with Chinese column names).
+
+    Split out of :func:`add_rating` so the timestamped long format can be reused
+    by the training pipeline without rewriting the mapping JSONs as a side
+    effect.
+    """
+    input_csv = Path(input_csv) if input_csv is not None else INTER_REEVALUATION_CSV
+    frame = None
+    for enc in ("gbk", "gb2312", "utf-8", "ansi"):
+        try:
+            frame = pd.read_csv(input_csv, encoding=enc)
+            break
+        except (UnicodeDecodeError, LookupError):
+            continue
+    if frame is None:
+        raise ValueError(f"Failed to read {input_csv}: encoding error")
+    return frame
+
+
+def parse_timestamps(series: pd.Series) -> pd.Series:
+    """Parse a BX timestamp column tolerantly.
+
+    ``还书时间`` stores a subset of its values with the space between date and
+    time missing::
+
+        2022-08-0811:14:55
+
+    pandas 1.x's fuzzy parser coped with that; pandas 2.x requires an exact
+    format and raises. The missing separator is repaired here, so the same helper
+    works for every timestamp column regardless of which form it uses.
+    """
+    text = series.astype("string").str.strip()
+    text = text.str.replace(
+        r"^(\d{4}-\d{1,2}-\d{1,2})(\d{2}:\d{2}:\d{2})$", r"\1 \2", regex=True)
+    return pd.to_datetime(text, errors="coerce", format="%Y-%m-%d %H:%M:%S")
+
+
+def compute_ratings(df: pd.DataFrame,
+                    reference_date: str = "2025-11-02") -> pd.DataFrame:
+    """Add the ``rating`` column. Pure -- performs no I/O.
+
+    score = 0.8 * normalised borrow duration + 0.2 * normalised renewal count,
+    rescaled to [1, 10]. ``reference_date`` is fixed rather than ``now()`` so
+    that unreturned books do not silently change the ratings between runs.
+    """
+    df = df.copy()
+    borrow_time = parse_timestamps(df["借阅时间"])
+    return_time = parse_timestamps(df["还书时间"])
+    now_time = pd.Timestamp(reference_date)
+    actual_duration = (return_time - borrow_time).fillna(now_time - borrow_time)
+    time_days = actual_duration.dt.total_seconds() / 86400
+
+    dur = time_days.clip(lower=0, upper=365)
+    dur_norm = (dur - dur.min()) / (dur.max() - dur.min() + 1e-8)
+
+    reborrow = df["续借次数"].clip(upper=5)
+    reborrow_norm = (reborrow - reborrow.min()) / (reborrow.max() - reborrow.min() + 1e-8)
+
+    score = 0.8 * dur_norm + 0.2 * reborrow_norm
+    df["rating"] = (score * 9 + 1).round(3)
+    return df
+
+
 def add_rating(input_csv: Path | str | None = None,
                output_dir: Path | str | None = None,
                reference_date: str = "2025-11-02") -> pd.DataFrame:
@@ -41,31 +105,7 @@ def add_rating(input_csv: Path | str | None = None,
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    df = None
-    for enc in ("gbk", "gb2312", "utf-8", "ansi"):
-        try:
-            df = pd.read_csv(input_csv, encoding=enc)
-            break
-        except (UnicodeDecodeError, LookupError):
-            continue
-    if df is None:
-        raise ValueError(f"Failed to read {input_csv}: encoding error")
-
-    # Time-based rating computation
-    borrow_time = pd.to_datetime(df["借阅时间"])
-    return_time = pd.to_datetime(df["还书时间"], format="%Y-%m-%d%H:%M:%S")
-    now_time = pd.Timestamp(reference_date)
-    actual_duration = (return_time - borrow_time).fillna(now_time - borrow_time)
-    time_days = actual_duration.dt.total_seconds() / 86400
-
-    dur = time_days.clip(lower=0, upper=365)
-    dur_norm = (dur - dur.min()) / (dur.max() - dur.min() + 1e-8)
-
-    reborrow = df["续借次数"].clip(upper=5)
-    reborrow_norm = (reborrow - reborrow.min()) / (reborrow.max() - reborrow.min() + 1e-8)
-
-    score = 0.8 * dur_norm + 0.2 * reborrow_norm
-    df["rating"] = (score * 9 + 1).round(3)
+    df = compute_ratings(read_interactions_raw(input_csv), reference_date)
 
     # Build 1-to-1 mappings
     inter2user = dict(zip(df["inter_id"], df["user_id"]))

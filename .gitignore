@@ -20,7 +20,11 @@ build/
 logs/
 plots/
 models_output/
-submissions/
+# `submissions/` used to be ignored as a whole, which meant the negations below
+# could never take effect (git does not descend into an ignored directory), and
+# the submission actually delivered was untracked. Ignore the contents instead.
+submissions/*
+!submissions/submission*.csv
 
 # IDE
 .idea/
@@ -38,3 +42,16 @@ Thumbs.db
 !DataLoad/*.parquet
 !id_mappings.json
 !submission*.csv
+
+# The content model is a local SentenceTransformer: without its config files
+# (*.json, vocab.txt) the MyModule/ directory cannot be loaded at all. The
+# blanket *.json / *.txt rules above excluded them, so a fresh clone could not
+# even run `cli/preprocess.py`.
+!MyModule/*.json
+!MyModule/*.txt
+!MyModule/**/*.json
+!MyModule/**/*.txt
+
+# Make sure the honest validation report and the fixed submission are tracked
+!reports/validation.md
+!submissions/submission_v2.csv

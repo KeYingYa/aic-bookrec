@@ -2,6 +2,42 @@
 
 基于矩阵分解（MF）和内容增强矩阵分解（CBMF）的图书推荐系统。
 
+---
+
+## ⚠️ 重要更正
+
+**本方案此前上报的 F1 = 0.0376 不是模型效果，是自评泄漏。**
+
+| | 上报值 | 诚实值 |
+|---|---|---|
+| 提交文件 | `submissions/submission.csv` | `submissions/submission_v2.csv` |
+| 指标 | F1 0.0376（precision 恒为 1.0） | top-1 accuracy ≈ 0.0196–0.0225 |
+| 评测方式 | 对**训练所用的同一个文件**自评 | 4 个时序 cut-off，训练严格早于预测 |
+
+原因有三，详见 **[FIXES.md](FIXES.md)**：
+
+1. 提交的 1000 条预测中有 997 条是该用户在 `inter_reevaluation.csv` 中
+   **最后一次借阅的书**，而 `cli/evaluate.py` 又拿同一个文件当验证集；
+2. `src/evaluation/f1.py` 只按 `user_id` 合并，导致**精确率恒为 1.0**、
+   F1 退化为与"选了哪本书"无关的常数；
+3. `src/data/dataset.py` 里所谓的"时序切分"实际是按书的列位置排序
+   （书号在几行前已被覆盖成位置编号），并非按借阅时间。
+
+修复后请使用：
+
+```bash
+python cli/validate.py --report reports/validation.md   # 诚实评测（4 个时序 cut-off）
+python cli/submit.py --tau 60 --cf-weight 0.25          # 生成合法提交
+python -m pytest tests -q                               # 10 个测试
+```
+
+**诚实的结论**：数据里有真实时间戳（2020-01-02 → 2024-12-30），
+在被正确使用时，本任务的天花板约 **2%**；"预测用户最近借的书"这一朴素规则
+已拿到 0.0196，与调优后的时间衰减画像模型（0.0225）在统计上无法区分
+（合并 4 个 cut-off 的配对比较：+16 人 / −11 人，共 1797 人）。
+
+---
+
 ## 项目结构
 
 ```

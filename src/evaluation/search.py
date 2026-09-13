@@ -25,21 +25,41 @@ def aggressive_random_search(
     book_ids: list,
     max_iterations: int = 10000,
     validation_path: Path | str | None = None,
+    allow_label_optimisation: bool = False,
 ) -> tuple[pd.DataFrame, float]:
-    """Aggressive random search to improve recommendation F1 score.
+    """Greedy random search over recommendations, scored against the labels.
 
-    Randomly changes book recommendations for subsets of users,
-    accepting all improvements.
+    WARNING -- this is label optimisation, not modelling. Every candidate is
+    scored against ``validation_path`` and accepted only if that score improves,
+    so the returned F1 is an upper bound on nothing: it measures how well the
+    search memorised the answer file, not how well the system will do on unseen
+    data. Running it against ``DataLoad/inter_reevaluation.csv`` -- the file the
+    models are also trained on -- produced the 0.0376 that this project
+    originally reported, while the models themselves scored 0.00004-0.0016.
+
+    Kept because it is instructive, and gated because the previous version ran
+    it silently. Pass ``allow_label_optimisation=True`` to acknowledge that the
+    output must not be reported as a model result.
 
     Args:
         initial_df: DataFrame with columns ['user_id', 'book_id'].
         book_ids: List of all valid book IDs to choose from.
         max_iterations: Maximum search iterations.
         validation_path: Path to validation CSV for F1 evaluation.
+        allow_label_optimisation: must be True; guards against accidental use.
 
     Returns:
-        Tuple of (best_df, best_score).
+        Tuple of (best_df, best_score) where best_score is an optimistic,
+        label-fitted score.
     """
+    if not allow_label_optimisation:
+        raise ValueError(
+            "aggressive_random_search optimises directly against the validation "
+            "labels, so its result cannot be reported as model quality. Pass "
+            "allow_label_optimisation=True if you understand that, or use "
+            "cli/validate.py for an honest measurement."
+        )
+
     current_df = initial_df.copy()
     best_df = current_df.copy()
     best_score = evaluate(best_df, validation_path=validation_path)["f1_score"]
