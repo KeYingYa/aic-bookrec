@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "book-rec"
+version = "2.0.0"
+description = "Book Recommendation System — AIC 2025 Competition"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.0",
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "scikit-learn>=1.3",
+    "matplotlib>=3.7",
+    "tqdm>=4.65",
+    "pyarrow>=12.0",
+]
+
+[project.optional-dependencies]
+gpu = [
+    "torch>=2.0",  # CUDA-enabled torch should be installed separately
+]
+embeddings = [
+    "sentence-transformers>=2.2",
+]
+
+[project.scripts]
+bookrec-preprocess = "cli.preprocess:main"
+bookrec-build-matrix = "cli.build_matrix:main"
+bookrec-train = "cli.train:main"
+bookrec-inference = "cli.inference:main"
+bookrec-evaluate = "cli.evaluate:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*", "cli*"]

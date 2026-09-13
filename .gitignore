@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+
+# Model files
+*.pth
+*.txt
+
+# Data outputs
+*.parquet
+*.json
+*.csv
+*.zip
+
+# Logs and plots
+logs/
+plots/
+models_output/
+submissions/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Keep essential data files
+!DataLoad/*.csv
+!DataLoad/*.json
+!DataLoad/*.parquet
+!id_mappings.json
+!submission*.csv

@@ -1,0 +1,24 @@
+# Book Recommendation System — Runtime Configuration
+#
+# This file is optional. All values default to what's in src/config/*.py.
+# Uncomment and modify any section to override defaults.
+
+# TRAINING:
+#   epochs: 300
+#   batch_size: 1024
+#   learning_rate: 0.001
+
+# DEVICE:
+#   use_gpu: true
+#   device_id: 0
+
+# LOGGING:
+#   model_path: "models_output/my_model.pth"
+#   plot_loss: true
+
+# DATA:
+#   file_path: "DataLoad/user_inter_matrix.parquet"
+
+# EARLY_STOPPING:
+#   enabled: false
+#   patience: 5

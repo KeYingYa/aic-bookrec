@@ -1,0 +1,509 @@
+\documentclass[12pt,a4paper]{article}
+
+% ===== 中文支持 =====
+\usepackage[UTF8]{ctex}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit, backgrounds}
+
+% ===== 代码高亮样式 =====
+\lstdefinestyle{pythonstyle}{
+    language=Python,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue}\bfseries,
+    commentstyle=\color{gray}\itshape,
+    stringstyle=\color{red!70!black},
+    numberstyle=\tiny\color{gray},
+    numbers=left,
+    numbersep=8pt,
+    frame=single,
+    breaklines=true,
+    backgroundcolor=\color{gray!5},
+    tabsize=4,
+    showstringspaces=false,
+    morekeywords={self, def, class, return, import, from, with, as, yield, lambda, True, False, None}
+}
+
+\lstset{style=pythonstyle}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!70!black,
+    citecolor=green!50!black
+}
+
+\title{\textbf{基于矩阵分解的图书馆书籍推荐系统}\\[0.5em]
+\large AIC-2025 复赛参赛方案}
+\author{凳子齐队 \quad 凌子润}
+\date{2025年11月}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+本文介绍了我们参加 AIC-2025（人工智能竞赛）复赛的完整方案。赛题任务为\textbf{图书馆书籍推荐}：根据用户的历史借阅记录，预测其下一次最可能借阅的图书。我们设计了两套基于矩阵分解的推荐模型——标准矩阵分解（MF）和融合内容信息的混合矩阵分解（CBMF），并采用了一系列数据预处理、特征工程和后处理策略。最终方案在 F1 评价指标上取得了有效成绩。本文将从赛题分析、数据处理、模型设计、训练策略和代码工程五个方面进行详细阐述。
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% =============================================================
+\section{赛题背景与任务分析}
+% =============================================================
+
+\subsection{赛题概述}
+
+AIC-2025 是一项面向高校学生的人工智能竞赛，本次复赛的核心任务是\textbf{图书馆书籍推荐}。给定用户的历史借阅数据和图书元数据，参赛者需要为每位用户预测其最可能借阅的图书列表。
+
+\subsection{评价指标}
+
+赛题采用 \textbf{F1 Score} 作为主要评价指标，综合考虑精确率（Precision）和召回率（Recall）：
+
+\begin{equation}
+    \text{Precision} = \frac{|\text{预测借阅} \cap \text{实际借阅}|}{|\text{预测借阅}|}
+\end{equation}
+
+\begin{equation}
+    \text{Recall} = \frac{|\text{预测借阅} \cap \text{实际借阅}|}{|\text{实际借阅}|}
+\end{equation}
+
+\begin{equation}
+    \text{F1} = \frac{2 \times \text{Precision} \times \text{Recall}}{\text{Precision} + \text{Recall}}
+\end{equation}
+
+提交结果的 F1 分数需大于 $0.0055$ 方为有效提交。
+
+\subsection{核心挑战}
+
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{稀疏性}：用户-图书交互矩阵极度稀疏，大部分用户仅借阅少量图书；
+    \item \textbf{隐式反馈}：借阅行为本身是隐式信号，需要转化为显式评分；
+    \item \textbf{冷启动}：部分用户或图书的交互记录极少；
+    \item \textbf{数据噪声}：存在未归还图书、异常借阅时长等情况。
+\end{itemize}
+
+% =============================================================
+\section{数据探索与预处理}
+% =============================================================
+
+\subsection{数据概况}
+
+原始数据包含三张核心表格：
+
+\begin{table}[H]
+\centering
+\caption{原始数据集概览}
+\begin{tabular}{lll}
+\toprule
+\textbf{文件} & \textbf{说明} & \textbf{关键字段} \\
+\midrule
+\texttt{user.csv} & 用户信息 & user\_id, 用户属性 \\
+\texttt{item.csv} & 图书信息 & book\_id, 书名, 作者等 \\
+\texttt{inter\_reevaluation.csv} & 借阅记录 & user\_id, book\_id, 借阅/归还时间, 续借次数 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{隐式反馈转显式评分}
+
+原始数据仅包含借阅行为（隐式反馈），我们设计了一套评分公式将其转化为 $[1, 10]$ 的显式评分：
+
+\begin{equation}
+    \text{score} = 0.8 \times \widehat{\text{duration}} + 0.2 \times \widehat{\text{renewals}}
+\end{equation}
+
+\begin{equation}
+    \text{rating} = \text{score} \times 9 + 1
+\end{equation}
+
+其中 $\widehat{\text{duration}}$ 为归一化的借阅时长，$\widehat{\text{renewals}}$ 为归一化的续借次数。
+
+\textbf{设计直觉}：借阅时长越长、续借次数越多，说明用户对该书的兴趣越强烈。对于未归还的图书，我们使用固定参考日期（2025-11-02）计算借阅时长，确保结果的确定性。
+
+\subsection{图书向量生成}
+
+为了在推荐模型中融入图书的内容信息，我们使用 \textbf{BAAI/bge-small-zh} 句向量模型将图书的文本元数据（书名、作者、简介等）编码为 512 维的稠密向量：
+
+\begin{equation}
+    \mathbf{v}_{\text{book}} = \text{BERT}_{\text{bge-small-zh}}(\text{text\_metadata}) \in \mathbb{R}^{512}
+\end{equation}
+
+该预训练模型基于 BERT 架构，具有 4 层 Transformer、8 个注意力头，词表大小为 21128，专为中文文本设计。
+
+\subsection{用户-物品矩阵构建}
+
+将所有借阅记录汇总为用户-物品评分矩阵 $\mathbf{R} \in \mathbb{R}^{M \times N}$，其中 $M$ 为用户数，$N$ 为图书数。同时建立双向 ID 映射：
+
+\begin{lstlisting}[caption={ID 映射结构},label={lst:id_mapping}]
+{
+    "user_to_index": {"U001": 0, "U002": 1, ...},
+    "index_to_user": {"0": "U001", "1": "U002", ...},
+    "item_to_index": {"B001": 0, "B002": 1, ...},
+    "index_to_item": {"0": "B001", "1": "B002", ...}
+}
+\end{lstlisting}
+
+% =============================================================
+\section{模型设计}
+% =============================================================
+
+我们设计了两套推荐模型：标准矩阵分解（MF）和融合内容信息的混合矩阵分解（CBMF）。
+
+\subsection{模型一：标准矩阵分解（MF）}
+
+\subsubsection{模型结构}
+
+标准 MF 模型的核心思想是将用户和物品分别映射到低维隐空间：
+
+\begin{equation}
+    \hat{r}_{ui} = \mathbf{p}_u^\top \mathbf{q}_i + b_u + b_i + \mu
+\end{equation}
+
+其中 $\mathbf{p}_u \in \mathbb{R}^k$ 为用户隐向量，$\mathbf{q}_i \in \mathbb{R}^k$ 为物品隐向量，$b_u, b_i$ 为偏置项，$\mu$ 为全局均值。我们取隐因子维度 $k = 20$。
+
+在此基础上，我们额外引入一个 MLP 评分头来增强模型的非线性表达能力：
+
+\begin{equation}
+    \hat{r}_{ui}^{\text{final}} = \text{MLP}\left([\mathbf{p}_u \,\|\, \mathbf{q}_i \,\|\, \mathbf{p}_u^\top \mathbf{q}_i \,\|\, \cos(\mathbf{p}_u, \mathbf{q}_i)]\right)
+\end{equation}
+
+其中 $\|$ 表示拼接操作，输入维度为 $20 + 20 + 1 + 1 = 42$。MLP 结构为：
+
+\begin{lstlisting}[caption={MF 评分头结构}]
+Linear(42, 8) -> ReLU -> Linear(8, 1)
+\end{lstlisting}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    block/.style={rectangle, draw, fill=blue!15, minimum width=2.5cm, minimum height=0.8cm, align=center, font=\small},
+    arrow/.style={-Stealth, thick}
+]
+    \node[block] (user_emb) {用户嵌入 $\mathbf{p}_u$};
+    \node[block, right=1.5cm of user_emb] (item_emb) {物品嵌入 $\mathbf{q}_i$};
+    \node[block, below=1cm of user_emb] (dot) {点积 $\mathbf{p}_u^\top \mathbf{q}_i$};
+    \node[block, below=1cm of item_emb] (cos) {余弦相似度};
+    \node[block, below=1.5cm of dot, fill=orange!20, minimum width=6cm] (concat) {拼接 $[\mathbf{p}_u \| \mathbf{q}_i \| \text{dot} \| \cos]$};
+    \node[block, below=0.8cm of concat, fill=green!20] (mlp) {MLP(42→8→1)};
+    \node[block, below=0.8cm of mlp, fill=red!15] (out) {预测评分 $\hat{r}_{ui}$};
+
+    \draw[arrow] (user_emb) -- (dot);
+    \draw[arrow] (item_emb) -- (dot);
+    \draw[arrow] (user_emb) |- (cos);
+    \draw[arrow] (item_emb) -- (cos);
+    \draw[arrow] (dot) -- (concat);
+    \draw[arrow] (cos) -- (concat);
+    \draw[arrow] (user_emb) |- (concat);
+    \draw[arrow] (item_emb) |- (concat);
+    \draw[arrow] (concat) -- (mlp);
+    \draw[arrow] (mlp) -- (out);
+\end{tikzpicture}
+\caption{MF 模型结构示意图}
+\label{fig:mf_arch}
+\end{figure}
+
+\subsubsection{训练配置}
+
+\begin{table}[H]
+\centering
+\caption{MF 模型训练超参数}
+\begin{tabular}{ll}
+\toprule
+\textbf{参数} & \textbf{值} \\
+\midrule
+隐因子维度 & 20 \\
+训练轮数 & 250 \\
+批大小 & 2048 \\
+优化器 & Adam (lr=2e-4, amsgrad=True) \\
+学习率调度 & ReduceLROnPlateau \\
+损失函数 & MSE \\
+数据划分 & Leave-last-2-out \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{模型二：内容增强矩阵分解（CBMF）}
+
+\subsubsection{核心思想}
+
+标准 MF 仅利用用户-物品交互信息，忽略了物品本身的内容特征。CBMF 通过一个\textbf{内容映射网络}将图书的文本向量投影到隐空间，实现内容信息与协同过滤的融合。
+
+\subsubsection{模型结构}
+
+物品隐向量不再作为独立的嵌入参数，而是由内容向量通过映射网络生成：
+
+\begin{equation}
+    \mathbf{q}_i = f_{\theta}(\mathbf{v}_i^{\text{content}})
+\end{equation}
+
+其中映射网络 $f_{\theta}$ 的结构为：
+
+\begin{lstlisting}[caption={CBMF 内容映射网络}]
+Linear(512, 512) -> BatchNorm -> ReLU
+Linear(512, 256) -> BatchNorm -> ReLU
+Linear(256, 1024)
+\end{lstlisting}
+
+最终评分为：
+
+\begin{equation}
+    \hat{r}_{ui} = \mathbf{p}_u \odot \mathbf{q}_i + b_u + b_i
+\end{equation}
+
+其中 $\odot$ 表示逐元素乘积（Hadamard 积），用户隐向量维度为 $k = 1024$。
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    block/.style={rectangle, draw, fill=blue!15, minimum width=2.8cm, minimum height=0.8cm, align=center, font=\small},
+    arrow/.style={-Stealth, thick}
+]
+    \node[block, fill=yellow!20] (content) {图书内容向量 $\mathbf{v}_i \in \mathbb{R}^{512}$};
+    \node[block, below=0.8cm of content, fill=orange!20, minimum width=4cm] (mapping) {映射网络 $f_{\theta}$ (512→512→256→1024)};
+    \node[block, below=0.8cm of mapping] (item_latent) {物品隐向量 $\mathbf{q}_i \in \mathbb{R}^{1024}$};
+    \node[block, left=2.5cm of item_latent] (user_latent) {用户隐向量 $\mathbf{p}_u \in \mathbb{R}^{1024}$};
+    \node[block, below=1.2cm of item_latent, fill=green!20, minimum width=3.5cm] (hadamard) {逐元素乘积 $\odot$ + 偏置};
+    \node[block, below=0.8cm of hadamard, fill=red!15] (out) {预测评分 $\hat{r}_{ui}$};
+
+    \draw[arrow] (content) -- (mapping);
+    \draw[arrow] (mapping) -- (item_latent);
+    \draw[arrow] (user_latent) -- (hadamard);
+    \draw[arrow] (item_latent) -- (hadamard);
+    \draw[arrow] (hadamard) -- (out);
+\end{tikzpicture}
+\caption{CBMF 模型结构示意图}
+\label{fig:cbmf_arch}
+\end{figure}
+
+\subsubsection{训练配置}
+
+\begin{table}[H]
+\centering
+\caption{CBMF 模型训练超参数}
+\begin{tabular}{ll}
+\toprule
+\textbf{参数} & \textbf{值} \\
+\midrule
+隐因子维度 & 1024 \\
+训练轮数 & 150 \\
+批大小 & 4096 \\
+优化器 & Adam (lr=1e-2) \\
+学习率调度 & StepLR \\
+早停 & patience=3 \\
+损失函数 & MSE \\
+数据划分 & Leave-last-2-out \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{模型对比}
+
+\begin{table}[H]
+\centering
+\caption{MF 与 CBMF 模型对比}
+\begin{tabular}{lcc}
+\toprule
+\textbf{特性} & \textbf{MF} & \textbf{CBMF} \\
+\midrule
+隐因子维度 & 20 & 1024 \\
+物品表示 & 独立嵌入参数 & 内容向量映射 \\
+内容信息 & 不利用 & 融合 \\
+评分方式 & MLP 头 & 逐元素乘积 \\
+适用场景 & 交互数据充足 & 冷启动、内容丰富 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% =============================================================
+\section{训练与优化策略}
+% =============================================================
+
+\subsection{数据划分：Leave-last-$N$-out}
+
+对每位用户，将其最近的 $N=2$ 次借阅作为验证集，其余作为训练集。这种划分方式模拟了真实的预测场景——根据历史行为预测未来行为。
+
+\subsection{后处理：随机搜索优化}
+
+在模型生成初始推荐列表后，我们使用\textbf{贪心随机搜索}进一步优化 F1 分数：
+
+\begin{enumerate}[leftmargin=2em]
+    \item 随机选择一个用户子集；
+    \item 对子集中的每位用户，随机替换其推荐列表中的一本书；
+    \item 计算新的 F1 分数，若提升则保留更改；
+    \item 重复最多 10,000 次迭代。
+\end{enumerate}
+
+该策略本质上是一种局部搜索，通过微调推荐结果来逼近更高的 F1 分数。
+
+% =============================================================
+\section{系统架构与代码工程}
+% =============================================================
+
+\subsection{项目结构}
+
+项目采用分层架构设计，从 v1 的单体脚本重构为 v2 的模块化结构：
+
+\begin{lstlisting}[caption={项目目录结构},language={},basicstyle=\ttfamily\small]
+book-rec/
+|-- src/                    # 核心源码（v2）
+|   |-- config/             # 配置层：超参数、路径
+|   |-- data/               # 数据层：预处理、矩阵构建、数据集
+|   |-- models/             # 模型层：MF、CBMF 定义
+|   |-- training/           # 训练层：训练循环、检查点
+|   |-- evaluation/         # 评估层：推理、F1 计算、搜索优化
+|   +-- utils/              # 工具层：日志、IO、相似度计算
+|-- cli/                    # 命令行入口
+|   |-- preprocess.py       # Step 1: 评分计算 + 图书向量
+|   |-- build_matrix.py     # Step 2: 用户-物品矩阵
+|   |-- train.py            # Step 3: 模型训练
+|   |-- inference.py        # Step 4: 推荐生成
+|   +-- evaluate.py         # Step 5: F1 评估
+|-- DataLoad/               # 原始数据
+|-- MyModule/               # 预训练模型 (bge-small-zh)
+|-- models/                 # 训练好的模型权重
+|-- submissions/            # 提交文件
++-- legacy/                 # v1 旧代码（归档）
+\end{lstlisting}
+
+\subsection{设计模式：模板方法模式}
+
+通过基类提取公共逻辑，子类只需实现差异部分：
+
+\begin{lstlisting}[caption={基类设计示例}]
+class BaseRecommender(nn.Module):
+    """推荐模型基类，定义通用接口"""
+    def predict(self, user_ids, item_ids):
+        raise NotImplementedError
+
+class MatrixFactorization(BaseRecommender):
+    """标准 MF 实现"""
+    ...
+
+class ContentBasedMF(BaseRecommender):
+    """内容增强 MF 实现"""
+    ...
+\end{lstlisting}
+
+\subsection{v1 到 v2 的重构改进}
+
+\begin{table}[H]
+\centering
+\caption{v1 到 v2 的关键改进}
+\begin{tabular}{cl}
+\toprule
+\textbf{类别} & \textbf{改进内容} \\
+\midrule
+架构 & 分层包结构，职责清晰 \\
+去重 & 基类提取公共逻辑，消除 MF/CBMF 间重复代码 \\
+健壮性 & 修复 ID 映射错误、off-by-one、硬编码路径 \\
+工具化 & 统一 CLI 入口，替代分散的 \texttt{\_\_main\_\_} 块 \\
+安全性 & \texttt{weights\_only=True} 加载检查点 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{端到端流水线}
+
+整个推荐系统的执行流程如下：
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    node distance=1.2cm,
+    process/.style={rectangle, draw, rounded corners, fill=blue!12, minimum width=3cm, minimum height=0.9cm, align=center, font=\small},
+    arrow/.style={-Stealth, thick, draw=gray!70}
+]
+    \node[process] (p1) {Step 1: 数据预处理};
+    \node[process, right=0.8cm of p1] (p2) {Step 2: 矩阵构建};
+    \node[process, right=0.8cm of p2] (p3) {Step 3: 模型训练};
+    \node[process, below=1cm of p3] (p4) {Step 4: 推荐生成};
+    \node[process, left=0.8cm of p4] (p5) {Step 5: F1 评估};
+    \node[process, left=0.8cm of p5, fill=yellow!20] (p6) {随机搜索优化};
+
+    \draw[arrow] (p1) -- (p2);
+    \draw[arrow] (p2) -- (p3);
+    \draw[arrow] (p3) -- (p4);
+    \draw[arrow] (p4) -- (p5);
+    \draw[arrow] (p5) -- (p6);
+    \draw[arrow, dashed] (p6) -- (p4);
+\end{tikzpicture}
+\caption{推荐系统端到端流水线}
+\label{fig:pipeline}
+\end{figure}
+
+% =============================================================
+\section{实验结果与经验总结}
+% =============================================================
+
+\subsection{模型迭代历程}
+
+在比赛期间，我们进行了大量实验，训练了多个模型变体：
+
+\begin{table}[H]
+\centering
+\caption{主要模型变体}
+\begin{tabular}{lll}
+\toprule
+\textbf{模型} & \textbf{类型} & \textbf{说明} \\
+\midrule
+mf\_100 & MF & 隐因子 100 维 \\
+mf\_128 & MF & 隐因子 128 维 \\
+mf\_256 & MF & 隐因子 256 维 \\
+mf\_v2/v3 & MF & 迭代改进版本 \\
+mf\_final & MF & 最终 MF 版本 \\
+cb\_mf\_model & CBMF & 内容增强版本 \\
+fin\_model & MF & 最终提交模型 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{关键经验}
+
+\begin{enumerate}[leftmargin=2em]
+    \item \textbf{评分公式设计至关重要}：将隐式反馈转化为合理的显式评分是整个系统的基础。借阅时长和续借次数的加权组合能有效反映用户兴趣强度。
+
+    \item \textbf{内容信息的融合}：CBMF 通过将图书文本向量映射到隐空间，有效缓解了冷启动问题。对于借阅记录较少的用户，内容信息提供了有价值的补充信号。
+
+    \item \textbf{后处理的价值}：随机搜索优化虽然简单，但在模型预测的基础上能带来可观的 F1 提升。推荐系统的最终效果往往取决于这些"最后一公里"的优化。
+
+    \item \textbf{代码工程的重要性}：从 v1 到 v2 的重构大幅提升了开发效率。清晰的模块划分使得实验迭代更加便捷，也减少了 bug 的引入。
+\end{enumerate}
+
+% =============================================================
+\section{总结与展望}
+% =============================================================
+
+本文介绍了我们在 AIC-2025 复赛中的书籍推荐方案。通过设计评分公式将隐式反馈转化为显式评分，构建了标准 MF 和内容增强 CBMF 两套模型，并采用随机搜索优化后处理策略。在工程方面，项目从单体脚本重构为分层模块化架构，显著提升了代码质量和开发效率。
+
+\textbf{未来改进方向}：
+
+\begin{itemize}[leftmargin=2em]
+    \item 引入序列模型（如 GRU4Rec、SASRec）捕捉用户的时序借阅模式；
+    \item 利用图神经网络（GNN）建模用户-图书-作者等多关系图；
+    \item 探索负采样策略的优化，提升隐式反馈下的训练效果；
+    \item 集成多种模型的预测结果，通过 Stacking 进一步提升性能。
+\end{itemize}
+
+% =============================================================
+\section*{参考资料}
+% =============================================================
+
+\begin{enumerate}[leftmargin=2em]
+    \item Koren Y, Bell R, Volinsky C. Matrix factorization techniques for recommender systems[J]. Computer, 2009, 42(8): 30-37.
+    \item He X, Liao L, Zhang H, et al. Neural collaborative filtering[C]//WWW, 2017: 173-182.
+    \item BAAI/bge-small-zh: \url{https://huggingface.co/BAAI/bge-small-zh}
+\end{enumerate}
+
+\end{document}
