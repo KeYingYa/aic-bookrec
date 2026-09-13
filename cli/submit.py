@@ -69,7 +69,8 @@ def main() -> None:
     print(f"\nwrote {len(submission):,} predictions to {output}")
     print(f"  predicted books that the user has borrowed before: "
           f"{seen_before:,}/{len(submission):,} ({100 * seen_before / len(submission):.1f}%)")
-    print("  (that share is expected: 17% of next borrows are re-borrows)")
+    print("  (that share is expected: ~11% of next borrows are re-borrows on "
+          "the temporal cut-offs; the model can only ever be right on those cases)")
     print(f"  distinct books recommended: {submission['book_id'].nunique():,}")
     print("\nExpected honest top-1 accuracy: ~1.5-1.7% (see FIXES.md). "
           "Do not quote the old 0.0376 for this file.")

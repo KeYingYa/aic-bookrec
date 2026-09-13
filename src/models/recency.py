@@ -7,9 +7,10 @@ Every predictor exposes the same tiny interface::
 
 The candidate set is the **whole catalogue including books the user has already
 borrowed**. That is deliberate and is where this task differs from the
-leave-one-out protocol used for Book-Crossing: in a library, 17% of a user's
-next borrows are books they have borrowed before, so masking seen items would
-throw away one correct answer in six.
+leave-one-out protocol used for Book-Crossing: in a library a user's next
+borrow is quite often a book they have borrowed before (about 11% of the time on
+the temporal cut-offs, 17% under leave-last-one-out), so masking seen items would
+throw away a large share of the answers that are actually reachable.
 
 What the honest baselines on the temporal split say (4 cut-offs, see
 ``FIXES.md``): global popularity 0.000-0.002, user's most frequent book

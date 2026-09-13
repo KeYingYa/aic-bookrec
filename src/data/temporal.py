@@ -145,8 +145,9 @@ def temporal_split(frame: pd.DataFrame, cutoff: str,
             a submission will score, since the real task gives every user a
             history. ``cli/validate.py`` reports both.
 
-    Already-borrowed books stay in the candidate set: 17% of next borrows are
-    re-borrows, so masking them would discard one correct answer in six.
+    Already-borrowed books stay in the candidate set: on these cut-offs about
+    11% of next borrows are re-borrows (17% under leave-last-one-out), so masking
+    them would discard roughly one correct answer in nine.
     """
     cutoff_ts = pd.Timestamp(cutoff)
     train = frame[frame["borrow_ts"] < cutoff_ts]

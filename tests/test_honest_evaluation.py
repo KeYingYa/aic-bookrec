@@ -5,7 +5,8 @@ SentenceTransformer -- so they verify the *logic* that the fixes depend on:
 
 * the temporal split trains strictly before the cut-off;
 * it is not the old fake "hold the largest book ids" split;
-* re-borrowed books stay in the candidate set (17% of next borrows are repeats);
+* re-borrowed books stay in the candidate set (~11% of next borrows on the
+  temporal cut-offs are repeats, 17% under leave-last-one-out);
 * the shipped F1 metric is degenerate, which is why it was replaced.
 """
 
