@@ -103,3 +103,28 @@ python cli/evaluate.py submissions/submission.csv
 3. **Bug 修复** — ID映射全量生成、移除死代码、修复路径硬编码
 4. **CLI 工具** — 统一命令行入口替代散落的 `__main__` 块
 5. **安全加载** — 模型加载使用 `weights_only=True`（兼容旧格式）
+
+---
+
+## 快速复现
+
+数据与模型文件未入库（`.gitignore` 排除了 `*.parquet` / `*.pth` / `*.safetensors`），需自行准备：
+
+- `DataLoad/`：原始借阅交互数据（比赛官方提供）
+- `MyModule/`：本地 SentenceTransformer 模型，用于 CBMF 的内容向量
+
+准备就绪后按序执行：
+
+```bash
+pip install torch numpy pandas scikit-learn matplotlib tqdm pyarrow
+
+python cli/preprocess.py
+python cli/build_matrix.py --max-users 1000
+python cli/train.py --model mf --epochs 100
+
+python cli/validate.py --report reports/validation.md   # 诚实评测：4 段时序 cut-off
+python cli/submit.py --tau 60 --cf-weight 0.25           # 生成提交文件
+python -m pytest tests -q                                # 10 个测试
+```
+
+> 评测结论与踩坑记录见文首「重要更正」与 [FIXES.md](FIXES.md)。
