@@ -39,7 +39,6 @@ Thumbs.db
 # Keep essential data files
 !DataLoad/*.csv
 !DataLoad/*.json
-!DataLoad/*.parquet
 !id_mappings.json
 !submission*.csv
 
